@@ -1,0 +1,7 @@
+[project]
+name = "yolo_experiment_creator"
+version = "0.1.0"
+description = "Generate YOLO experiment templates"
+
+[project.scripts]
+create-experiment = "yolo_experiment_creator.create_experiment:main"
