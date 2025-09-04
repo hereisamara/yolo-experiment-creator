@@ -5,3 +5,4 @@ description = "Generate YOLO experiment templates"
 
 [project.scripts]
 create-experiment = "yolo_experiment_creator.create_experiment:main"
+dataset-tool = "yolo_experiment_creator.dataset_manipulator:main"
