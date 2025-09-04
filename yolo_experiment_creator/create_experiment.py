@@ -6,6 +6,24 @@ import yaml
 from pathlib import Path
 from datetime import datetime
 
+def get_image_paths(images_dir, labels_dir):
+    image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png"))
+    label_files = [labels_dir / (img.stem + ".txt") for img in image_files]
+    
+    # Ensure that each image has a corresponding label
+    valid_image_label_pairs = [
+        str(img.resolve()) for img, lbl in zip(image_files, label_files) if lbl.exists()
+    ]
+    return valid_image_label_pairs
+
+def get_label_paths(labels_dir):
+    return [str(lbl.resolve()) for lbl in labels_dir.glob("*.txt")]
+
+def write_txt(file_path, lines):
+    with open(file_path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate YOLO experiment template")
     parser.add_argument("name", nargs="?", default=None, help="Experiment name")
@@ -14,7 +32,7 @@ def parse_args():
 
 def create_experiment(args):
     # Use current date-time and append to name if provided
-    name = args.name or f"Exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    name = f"Exp_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}" if not args.name else f"Exp_{args.name}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     exp_dir = Path(name)
     exp_dir.mkdir(exist_ok=True)
 
@@ -28,48 +46,81 @@ def create_experiment(args):
     log_file = exp_dir / "train_logs.txt"
     status_file = exp_dir / "status.txt"
 
-    # Create train.txt, val.txt, and test.txt based on original dataset
+    # Check if dataset is already split into train, valid, and test folders
     if args.dataset and Path(args.dataset).exists():
         dataset_path = Path(args.dataset)
-        images_dir = dataset_path / "images"
-        labels_dir = dataset_path / "labels"
-        
-        # Get the list of image files (assuming they are .jpg or .png)
-        image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png"))
-        label_files = [labels_dir / (img.stem + ".txt") for img in image_files]
+        if all((dataset_path / folder).exists() for folder in ['train', 'valid', 'test']):
+            # Dataset is already split into train, valid, and test
+            image_paths = {
+                'train': dataset_path / 'train' / 'images',
+                'valid': dataset_path / 'valid' / 'images',
+                'test': dataset_path / 'test' / 'images'
+            }
+            label_paths = {
+                'train': dataset_path / 'train' / 'labels',
+                'valid': dataset_path / 'valid' / 'labels',
+                'test': dataset_path / 'test' / 'labels'
+            }
 
-        # Ensure that each image has a corresponding label
-        valid_image_label_pairs = [
-            (img, lbl) for img, lbl in zip(image_files, label_files) if lbl.exists()
-        ]
+            # Create the txt files by fetching corresponding image and label pairs
+            write_txt(train_file, get_image_paths(image_paths['train'], label_paths['train']))
+            write_txt(val_file, get_image_paths(image_paths['valid'], label_paths['valid']))
+            write_txt(test_file, get_image_paths(image_paths['test'], label_paths['test']))
 
-        # Split into train, val, and test sets (80%, 10%, 10%)
-        random.shuffle(valid_image_label_pairs)
-        total = len(valid_image_label_pairs)
-        train_size = int(total * 0.8)
-        val_size = int(total * 0.1)
-        
-        train_split = valid_image_label_pairs[:train_size]
-        val_split = valid_image_label_pairs[train_size:train_size + val_size]
-        test_split = valid_image_label_pairs[train_size + val_size:]
+            # Create corresponding label files
+            write_txt(train_file.with_name("train_labels.txt"), get_label_paths(label_paths['train']))
+            write_txt(val_file.with_name("val_labels.txt"), get_label_paths(label_paths['valid']))
+            write_txt(test_file.with_name("test_labels.txt"), get_label_paths(label_paths['test']))
 
-        # Write train.txt, val.txt, and test.txt
-        write_txt(train_file, [str(img.resolve()) for img, lbl in train_split])
-        write_txt(val_file, [str(img.resolve()) for img, lbl in val_split])
-        write_txt(test_file, [str(img.resolve()) for img, lbl in test_split])
+            # Read class names from dataset.yaml if it exists
+            names = []
+            dataset_yaml = dataset_path / "data.yaml"
+            if dataset_yaml.exists():
+                with open(dataset_yaml, "r") as f:
+                    data_cfg = yaml.safe_load(f)
+                    names = data_cfg.get("names", [])
 
-        # Write corresponding label files
-        write_txt(train_file.with_name("train_labels.txt"), [str(lbl.resolve()) for img, lbl in train_split])
-        write_txt(val_file.with_name("val_labels.txt"), [str(lbl.resolve()) for img, lbl in val_split])
-        write_txt(test_file.with_name("test_labels.txt"), [str(lbl.resolve()) for img, lbl in test_split])
+        else:
+            dataset_path = Path(args.dataset)
+            images_dir = dataset_path / "images"
+            labels_dir = dataset_path / "labels"
+            
+            # Get the list of image files (assuming they are .jpg or .png)
+            image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png"))
+            label_files = [labels_dir / (img.stem + ".txt") for img in image_files]
 
-        # Read class names from dataset.yaml if exists
-        names = []
-        dataset_yaml = dataset_path / "data.yaml"
-        if dataset_yaml.exists():
-            with open(dataset_yaml, "r") as f:
-                data_cfg = yaml.safe_load(f)
-                names = data_cfg.get("names", [])
+            # Ensure that each image has a corresponding label
+            valid_image_label_pairs = [
+                (img, lbl) for img, lbl in zip(image_files, label_files) if lbl.exists()
+            ]
+
+            # Split into train, val, and test sets (80%, 10%, 10%)
+            random.shuffle(valid_image_label_pairs)
+            total = len(valid_image_label_pairs)
+            train_size = int(total * 0.8)
+            val_size = int(total * 0.1)
+            
+            train_split = valid_image_label_pairs[:train_size]
+            val_split = valid_image_label_pairs[train_size:train_size + val_size]
+            test_split = valid_image_label_pairs[train_size + val_size:]
+
+            # Write train.txt, val.txt, and test.txt
+            write_txt(train_file, [str(img.resolve()) for img, lbl in train_split])
+            write_txt(val_file, [str(img.resolve()) for img, lbl in val_split])
+            write_txt(test_file, [str(img.resolve()) for img, lbl in test_split])
+
+            # Write corresponding label files
+            write_txt(train_file.with_name("train_labels.txt"), [str(lbl.resolve()) for img, lbl in train_split])
+            write_txt(val_file.with_name("val_labels.txt"), [str(lbl.resolve()) for img, lbl in val_split])
+            write_txt(test_file.with_name("test_labels.txt"), [str(lbl.resolve()) for img, lbl in test_split])
+
+            # Read class names from dataset.yaml if exists
+            names = []
+            dataset_yaml = dataset_path / "data.yaml"
+            if dataset_yaml.exists():
+                with open(dataset_yaml, "r") as f:
+                    data_cfg = yaml.safe_load(f)
+                    names = data_cfg.get("names", [])
     else:
         train_file.write_text("")
         val_file.write_text("")
