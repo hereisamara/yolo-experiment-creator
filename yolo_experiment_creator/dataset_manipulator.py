@@ -161,40 +161,159 @@ def show_dataset_info(root_dir):
             print(f"  - Contains {len(labels)} label files.")
             print(f"  - Total objects (bounding boxes) in the dataset: {total_objects}\n")
 
+
 # 5. Check if labels are correct: Check random samples
-def check_labels(txt_file, sample_size=5):
-    lines = read_txt(txt_file)
-    sample_lines = random.sample(lines, sample_size)
+def check_labels(split="train", exp_dir=".", background=False, sample_size=5):
+    """
+    Sample and display label contents for a dataset split.
 
-    for line in sample_lines:
-        image_file = Path(line).stem
-        label_file = Path(line).with_suffix(".txt")
+    Args:
+        split (str): Dataset split to check ("train", "val", "test").
+        exp_dir (str): Directory where the txt files reside.
+        background (bool): If True, allows images without labels.
+        sample_size (int): Number of samples to inspect.
+    """
+    txt_file = Path(exp_dir) / f"{split}.txt"
+    lbl_file = Path(exp_dir) / f"{split}_labels.txt"
 
-        if label_file.exists():
-            print(f"Checking {label_file} for {image_file}")
-            with open(label_file, "r") as label:
-                print(label.readlines())
+    if not txt_file.exists():
+        print(f"❌ Image txt file not found: {txt_file}")
+        return
+    if not lbl_file.exists():
+        print(f"⚠️ Label txt file not found: {lbl_file}")
+        if not background:
+            print("Aborting: No label file for this split and background=False")
+            return
+
+    # Read all lines
+    img_lines = [line.strip() for line in txt_file.read_text().splitlines() if line.strip()]
+    lbl_lines = [line.strip() for line in lbl_file.read_text().splitlines() if line.strip()] if lbl_file.exists() else []
+
+    # Build a lookup for label paths by stem
+    lbl_lookup = {Path(lbl).stem: lbl for lbl in lbl_lines}
+
+    # Randomly sample image lines
+    sample_lines = random.sample(img_lines, min(sample_size, len(img_lines)))
+
+    debug_folder = Path(exp_dir) / f"{split}_debug"
+    debug_folder.mkdir(exist_ok=True)
+    print(f"Debug output folder: {debug_folder.resolve()}")
+
+    for img_path in sample_lines:
+        stem = Path(img_path).stem
+        lbl_path = lbl_lookup.get(stem)
+
+        print(f"\nImage: {img_path}")
+        if lbl_path and Path(lbl_path).exists():
+            print(f"Label: {lbl_path}")
+            with open(lbl_path, "r") as f:
+                lines = [line.strip() for line in f.readlines()]
+                if lines:
+                    print(f"Contents:\n" + "\n".join(lines))
+                else:
+                    print("⚠️ Label file is empty")
+        else:
+            if background:
+                print("⚠️ No label file (background image)")
+            else:
+                print("❌ Missing label file")
 
 # 6. Clean dataset: Delete entries from text files if labels are empty or missing
-def clean_dataset(txt_file):
-    lines = read_txt(txt_file)
-    cleaned_lines = []
+def clean_dataset(split="all", exp_dir=".", background=False):
+    """
+    Clean dataset text files with optional background support.
+    Prompts for confirmation before removing entries.
 
-    for line in lines:
-        image_file = Path(line).stem
-        label_file = Path(line).with_suffix(".txt")
+    Args:
+        split (str): "train", "val", "test", or "all"
+        exp_dir (str): Directory where txt files are stored
+        background (bool): If True, allow images without labels (background)
+    """
 
-        if label_file.exists():
-            # Do not delete any files, just remove from txt file if label is empty
-            if os.stat(label_file).st_size == 0:
-                print(f"Empty label detected, removing {line} from {txt_file}")
+    # Define which files to check
+    txt_pairs = []
+    if split in ["train", "val", "test"]:
+        txt_pairs.append((
+            Path(exp_dir) / f"{split}.txt",
+            Path(exp_dir) / f"{split}_labels.txt"
+        ))
+    elif split == "all":
+        for s in ["train", "val", "test"]:
+            txt_pairs.append((
+                Path(exp_dir) / f"{s}.txt",
+                Path(exp_dir) / f"{s}_labels.txt"
+            ))
+
+    for img_txt, lbl_txt in txt_pairs:
+        if not img_txt.exists() or not lbl_txt.exists():
+            print(f"Skipping missing file pair: {img_txt}, {lbl_txt}")
+            continue
+
+        # Read image paths and label paths
+        img_lines = [line.strip() for line in img_txt.read_text().splitlines() if line.strip()]
+        lbl_lines = [line.strip() for line in lbl_txt.read_text().splitlines() if line.strip()]
+
+        # Build label lookup by stem
+        lbl_lookup = {Path(lbl).stem: lbl for lbl in lbl_lines}
+
+        # Count potential removals
+        remove_img_count = 0
+        remove_lbl_count = 0
+
+        for img in img_lines:
+            stem = Path(img).stem
+            lbl = lbl_lookup.get(stem)
+            if lbl:
+                if not Path(lbl).exists() or os.stat(lbl).st_size == 0:
+                    remove_img_count += 1
             else:
-                cleaned_lines.append(line)
-        else:
-            print(f"Missing label for image: {image_file}, removing {line} from {txt_file}")
+                if not background:
+                    remove_img_count += 1
 
-    write_txt(txt_file, cleaned_lines)
-    print(f"Cleaned {txt_file}, removed mismatched or empty labels.")
+        # Labels without corresponding images
+        img_stems = {Path(img).stem for img in img_lines}
+        remove_lbl_count = sum(1 for lbl in lbl_lines if Path(lbl).stem not in img_stems)
+
+        # Warn user
+        print(f"\n⚠️ Cleaning preview for '{img_txt.name}' and '{lbl_txt.name}':")
+        print(f"  Background mode: {'ON' if background else 'OFF'}")
+        print(f"  Images to be removed: {remove_img_count}")
+        print(f"  Labels to be removed: {remove_lbl_count}")
+        confirm = input("Do you want to proceed? (y/n): ").strip().lower()
+        if confirm != 'y':
+            print("Skipping this pair.\n")
+            continue
+
+        # Proceed with cleaning
+        cleaned_img_lines = []
+        cleaned_lbl_lines = []
+
+        for img in img_lines:
+            stem = Path(img).stem
+            lbl = lbl_lookup.get(stem)
+
+            if lbl:
+                if Path(lbl).exists() and os.stat(lbl).st_size > 0:
+                    cleaned_img_lines.append(img)
+                    cleaned_lbl_lines.append(lbl)
+                else:
+                    print(f"Removed image with empty label: {img}")
+            else:
+                if background:
+                    cleaned_img_lines.append(img)
+                else:
+                    print(f"Removed image without label: {img}")
+
+        # Remove orphan labels (labels without corresponding images)
+        cleaned_lbl_lines = [lbl for lbl in lbl_lines if Path(lbl).stem in {Path(img).stem for img in cleaned_img_lines}]
+
+        # Write back cleaned txt files
+        write_txt(img_txt, cleaned_img_lines)
+        write_txt(lbl_txt, cleaned_lbl_lines)
+
+        print(f"✅ Cleaned '{img_txt.name}' and '{lbl_txt.name}' — "
+              f"{len(img_lines) - len(cleaned_img_lines)} images removed, "
+              f"{len(lbl_lines) - len(cleaned_lbl_lines)} labels removed.\n")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Dataset Manipulation for YOLO")
@@ -218,13 +337,54 @@ def parse_args():
     info_parser.add_argument("root_dir", help="Path to the root directory of the dataset")
 
     # Subcommand for checking labels
-    check_parser = subparsers.add_parser("check-labels", help="Check random labels for correctness")
-    check_parser.add_argument("txt_file", help="Path to the text file (train.txt, etc.)")
-    check_parser.add_argument("--sample-size", type=int, default=5, help="Number of samples to check")
+    check_parser = subparsers.add_parser(
+        "check-labels", 
+        help="Check random labels for correctness"
+    )
+    check_parser.add_argument(
+        "--split", 
+        choices=["train", "val", "test"], 
+        default="train",
+        help="Dataset split to check (default: train)"
+    )
+    check_parser.add_argument(
+        "--exp-dir", 
+        default=".",
+        help="Directory where the txt files reside (default: current directory)"
+    )
+    check_parser.add_argument(
+        "--background", 
+        action="store_true", 
+        help="Allow background images without label files"
+    )
+    check_parser.add_argument(
+        "--sample-size", 
+        type=int, 
+        default=5, 
+        help="Number of random samples to check (default: 5)"
+    )
+
 
     # Subcommand for cleaning the dataset
-    clean_parser = subparsers.add_parser("clean", help="Clean the dataset (remove empty/mismatched labels)")
-    clean_parser.add_argument("txt_file", help="Path to the text file (train.txt, etc.)")
+    clean_parser = subparsers.add_parser(
+        "clean", help="Clean the dataset (remove empty/mismatched labels)"
+    )
+    clean_parser.add_argument(
+        "--split",
+        choices=["train", "val", "test", "all"],
+        default="all",
+        help="Dataset split to clean (default: all)"
+    )
+    clean_parser.add_argument(
+        "--exp_dir",
+        default=".",
+        help="Directory containing the dataset txt files (default: current directory)"
+    )
+    clean_parser.add_argument(
+        "--background",
+        action="store_true",
+        help="Keep images without labels (background images)"
+    )
 
     return parser.parse_args()
 
