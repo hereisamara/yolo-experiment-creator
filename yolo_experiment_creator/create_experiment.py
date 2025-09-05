@@ -7,22 +7,12 @@ from pathlib import Path
 from datetime import datetime
 
 def get_image_paths(images_dir, labels_dir):
-    image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png"))
-    label_files = [labels_dir / (img.stem + ".txt") for img in image_files]
-    
-    # Ensure that each image has a corresponding label
-    valid_image_label_pairs = [
-        str(img.resolve()) for img, lbl in zip(image_files, label_files) if lbl.exists()
-    ]
-    return valid_image_label_pairs
+    image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png")) + list(images_dir.glob("*.jpeg")) + list(images_dir.glob("*.JPG"))
+    print(image_files)
+    return image_files
 
 def get_label_paths(labels_dir):
     return [str(lbl.resolve()) for lbl in labels_dir.glob("*.txt")]
-
-def write_txt(file_path, lines):
-    with open(file_path, 'w') as f:
-        f.write('\n'.join(lines) + '\n')
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate YOLO experiment template")
@@ -49,7 +39,10 @@ def create_experiment(args):
     # Check if dataset is already split into train, valid, and test folders
     if args.dataset and Path(args.dataset).exists():
         dataset_path = Path(args.dataset)
-        if all((dataset_path / folder).exists() for folder in ['train', 'valid', 'test']):
+        print(f"Dataset path provided: {dataset_path}")
+        if all((dataset_path / folder).exists() for folder in ['train', 'valid']):
+
+            print("train, valid, test folders found in dataset. Using existing splits.")
             # Dataset is already split into train, valid, and test
             image_paths = {
                 'train': dataset_path / 'train' / 'images',
@@ -61,6 +54,8 @@ def create_experiment(args):
                 'valid': dataset_path / 'valid' / 'labels',
                 'test': dataset_path / 'test' / 'labels'
             }
+
+            print(image_paths, label_paths)
 
             # Create the txt files by fetching corresponding image and label pairs
             write_txt(train_file, get_image_paths(image_paths['train'], label_paths['train']))
@@ -86,7 +81,7 @@ def create_experiment(args):
             labels_dir = dataset_path / "labels"
             
             # Get the list of image files (assuming they are .jpg or .png)
-            image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png"))
+            image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png")) + list(images_dir.glob("*.jpeg")) + list(images_dir.glob("*.JPG"))
             label_files = [labels_dir / (img.stem + ".txt") for img in image_files]
 
             # Ensure that each image has a corresponding label
@@ -122,6 +117,7 @@ def create_experiment(args):
                     data_cfg = yaml.safe_load(f)
                     names = data_cfg.get("names", [])
     else:
+        print("No dataset path provided or path does not exist. Creating empty experiment structure.")
         train_file.write_text("")
         val_file.write_text("")
         test_file.write_text("")
@@ -199,7 +195,12 @@ with open("{exp_dir}/predict_log.txt", "w") as log:
 
 def write_txt(file_path, lines):
     with open(file_path, 'w') as f:
-        f.write('\n'.join(lines) + '\n')
+        print("wrinting")
+        print(lines)
+        if len(lines) == 0:
+            f.write("")
+        else:
+            f.write('\n'.join(str(line) for line in lines) + '\n')
 
 def main():
     args = parse_args()  # Parse the arguments
