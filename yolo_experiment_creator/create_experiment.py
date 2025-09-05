@@ -8,7 +8,6 @@ from datetime import datetime
 
 def get_image_paths(images_dir, labels_dir):
     image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png")) + list(images_dir.glob("*.jpeg")) + list(images_dir.glob("*.JPG"))
-    print(image_files)
     return image_files
 
 def get_label_paths(labels_dir):
@@ -39,7 +38,6 @@ def create_experiment(args):
     # Check if dataset is already split into train, valid, and test folders
     if args.dataset and Path(args.dataset).exists():
         dataset_path = Path(args.dataset)
-        print(f"Dataset path provided: {dataset_path}")
         if all((dataset_path / folder).exists() for folder in ['train', 'valid']):
 
             print("train, valid, test folders found in dataset. Using existing splits.")
@@ -139,24 +137,139 @@ def create_experiment(args):
     # Create train.py (hardcoded parameters)
     train_script = f"""from ultralytics import YOLO
 
-model = YOLO("yolov8n.pt")  # default model
+    # ============================
+    # Initialize YOLO model
+    # ============================
+    model = YOLO("yolov8n.pt")  # default base model
 
-results = model.train(
-    data="{yaml_file.resolve()}",
-    epochs=100,          # Hardcoded epochs
-    imgsz=640,           # Hardcoded image size
-    batch=16,            # Hardcoded batch size
-    device=0,
-    workers=8,
-    project="{exp_dir}/runs",
-    name="train",
-    exist_ok=True,
-)
+    # ============================
+    # Experiment / Dataset Setup
+    # ============================
+    DATA_PATH = "{yaml_file.resolve()}"
+    PROJECT_DIR = "{exp_dir}/runs"
+    EXPERIMENT_NAME = "train"
+    DEVICE = 0
+    WORKERS = 8
 
-# Save logs
-with open("{log_file}", "w") as log:
-    log.write(str(results))
-"""
+    # ============================
+    # Training Hyperparameters
+    # ============================
+    EPOCHS = 100
+    BATCH_SIZE = 16
+    IMG_SIZE = 640
+    LEARNING_RATE = 0.005
+    LR_FINAL = 0.001
+    MOMENTUM = 0.937
+    WEIGHT_DECAY = 0.0005
+    OPTIMIZER = "SGD"
+    DROPOUT = 0.1
+    WARMUP_EPOCHS = 5
+    NBS = 64
+    PRETRAINED = True
+    FREEZE = None
+    DETERMINISTIC = True
+    SINGLE_CLS = False
+
+    # ============================
+    # Augmentation Parameters
+    # ============================
+    DEGREES = 0.0
+    TRANSLATE = 0.05
+    SHEAR = 0.0
+    FLIP_LR = 0.5
+    FLIP_UD = 0.0
+    HSV_H = 0.015
+    HSV_S = 0.2
+    HSV_V = 0.04
+    MOSAIC = 0.0
+    COPY_PASTE = 0.0
+    MIXUP = 0.0
+    CLOSE_MOSAIC = 15
+    AUTO_AUGMENT = "randaugment"
+    ERASING = 0.4
+    SCALE = 0.5
+    MASK_RATIO = 4
+    DYN = False
+
+    # ============================
+    # NMS / Detection Settings
+    # ============================
+    CONF = None
+    IOU = 0.7
+    MAX_DET = 300
+    AGNOSTIC_NMS = False
+
+    # ============================
+    # Logging & Saving
+    # ============================
+    SAVE = True
+    SAVE_TXT = False
+    SAVE_CONF = False
+    LOG_FILE = "{log_file}"
+
+    # ============================
+    # Tracker / Vision Settings
+    # ============================
+    TRACKER = "botsort.yaml"
+    SHOW = False
+    PLOTS = True
+    VERBOSE = True
+
+    # ============================
+    # Start Training
+    # ============================
+    results = model.train(
+        data=DATA_PATH,
+        epochs=EPOCHS,
+        imgsz=IMG_SIZE,
+        batch=BATCH_SIZE,
+        device=DEVICE,
+        workers=WORKERS,
+        project=PROJECT_DIR,
+        name=EXPERIMENT_NAME,
+        exist_ok=True,
+        optimizer=OPTIMIZER,
+        lr0=LEARNING_RATE,
+        lrf=LR_FINAL,
+        momentum=MOMENTUM,
+        weight_decay=WEIGHT_DECAY,
+        dropout=DROPOUT,
+        warmup_epochs=WARMUP_EPOCHS,
+        fliplr=FLIP_LR,
+        flipud=FLIP_UD,
+        degrees=DEGREES,
+        translate=TRANSLATE,
+        shear=SHEAR,
+        hsv_h=HSV_H,
+        hsv_s=HSV_S,
+        hsv_v=HSV_V,
+        mosaic=MOSAIC,
+        copy_paste=COPY_PASTE,
+        mixup=MIXUP,
+        close_mosaic=CLOSE_MOSAIC,
+        cache=True,
+        pretrained=PRETRAINED,
+        auto_augment=AUTO_AUGMENT,
+        erasing=ERASING,
+        scale=SCALE,
+        mask_ratio=MASK_RATIO,
+        plots=PLOTS,
+        verbose=VERBOSE,
+        conf=CONF,
+        iou=IOU,
+        max_det=MAX_DET,
+        agnostic_nms=AGNOSTIC_NMS,
+        single_cls=SINGLE_CLS,
+        tracker=TRACKER,
+        save=SAVE
+    )
+
+    # Save logs
+    with open(LOG_FILE, "w") as log:
+        log.write(str(results))
+
+    print(f"✅ Training complete! Logs saved at {{LOG_FILE}}")
+    """
     train_py.write_text(train_script)
 
     # Create predict.py
@@ -195,8 +308,6 @@ with open("{exp_dir}/predict_log.txt", "w") as log:
 
 def write_txt(file_path, lines):
     with open(file_path, 'w') as f:
-        print("wrinting")
-        print(lines)
         if len(lines) == 0:
             f.write("")
         else:
