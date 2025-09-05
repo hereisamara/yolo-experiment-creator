@@ -54,6 +54,7 @@ def copy_subset_of_dataset(dataset_txt, percent=20, output_dir="new_dataset"):
 
     print(f"Subset dataset created at {output_dir} with {percent}% of original dataset.")
 
+
 # 2. Delete files that match a given pattern (e.g., *frame* or _%6d)
 # Function to delete pattern entries from text files without deleting actual data
 def delete_files_by_pattern(root_dir, pattern):
@@ -95,6 +96,7 @@ def delete_files_by_pattern(root_dir, pattern):
 #     write_txt(val_txt, val_list)
 
 #     print(f"Train/test split created with {split_ratio * 100}% for training.")
+
 
 # 4. Show dataset info: count images, labels, objects, etc.
 # Function to show dataset info: count images, labels, objects, etc.
@@ -394,13 +396,13 @@ def main():
     if args.command == "copy-subset":
         copy_subset_of_dataset(args.dataset_txt, percent=args.percent, output_dir=args.output_dir)
     elif args.command == "delete-pattern":
-        delete_files_by_pattern(args.txt_file, args.pattern)
+        delete_files_by_pattern(args.root_dir, args.pattern)
     elif args.command == "info":
         show_dataset_info(args.txt_file)
     elif args.command == "check-labels":
-        check_labels(args.txt_file, sample_size=args.sample_size)
+        check_labels(split=args.split, exp_dir= args.exp_dir, background= args.background, sample_size=args.sample_size)
     elif args.command == "clean":
-        clean_dataset(args.txt_file)
+        clean_dataset(split=args.split, exp_dir= args.exp_dir, background= args.background)
 
 if __name__ == "__main__":
     main()
